@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "830777187730",
+    "project_id": "com-snapstreakrecoverer-a777c",
+    "storage_bucket": "com-snapstreakrecoverer-a777c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:830777187730:android:da1885346e9dc9ea7bf54b",
+        "android_client_info": {
+          "package_name": "com.snapstreakrecoverer.ssr"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOfkl506fAcqFMzan_yGWXUZWt4dAAZ3s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
