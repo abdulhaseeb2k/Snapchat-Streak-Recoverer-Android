@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft drop shadow behind the flame -->
+    <path
+        android:fillColor="#22000000"
+        android:pathData="M55,25 C50,36 42,43 39,53 C36,62 37,69 42,75 C46,80 51,82 55,82 C63,82 71,76 72,66 C73,59 70,52 65,46 C64,50 62,53 59,54 C61,45 59,34 55,25 Z" />
+
+    <!-- Outer flame (white) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,23 C49,34 41,41 38,51 C35,60 36,67 41,73 C45,78 50,80 54,80 C62,80 70,74 71,64 C72,57 69,50 64,44 C63,48 61,51 58,52 C60,43 58,32 54,23 Z" />
+
+    <!-- Inner core (Snapchat yellow) -->
+    <path
+        android:fillColor="#FFFFE100"
+        android:pathData="M54,52 C51,57 47,61 47,67 C47,73 50,77 54,77 C58,77 61,73 61,67 C61,61 57,57 54,52 Z" />
+</vector>
