@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +40,7 @@ fun FriendScreen(
     val selectedCount = friends.count { it.isSelected }
     
     var showAddDialog by remember { mutableStateOf(false) }
+    var friendToEdit by remember { mutableStateOf<Friend?>(null) }
 
     Scaffold(
         topBar = {
@@ -115,6 +117,7 @@ fun FriendScreen(
                                 FriendItem(
                                     friend = friend,
                                     onToggle = { viewModel.toggleFriendSelection(friend) },
+                                    onEdit = { friendToEdit = friend },
                                     onDelete = { viewModel.deleteFriend(friend) }
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -164,12 +167,71 @@ fun FriendScreen(
             }
         }
     }
+
+    friendToEdit?.let { editing ->
+        EditFriendDialog(
+            friend = editing,
+            onDismiss = { friendToEdit = null },
+            onSave = { updated ->
+                viewModel.updateFriend(updated)
+                friendToEdit = null
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditFriendDialog(
+    friend: Friend,
+    onDismiss: () -> Unit,
+    onSave: (Friend) -> Unit
+) {
+    var name by remember(friend.id) { mutableStateOf(friend.displayName) }
+    var username by remember(friend.id) { mutableStateOf(friend.username) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Friend", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    label = { Text("Username") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(friend.copy(username = username.trim(), displayName = name.trim())) },
+                enabled = username.isNotBlank()
+            ) {
+                Text("Save", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
 fun FriendItem(
     friend: Friend,
     onToggle: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Surface(
@@ -206,6 +268,12 @@ fun FriendItem(
                 }
             }
             
+            IconButton(onClick = onEdit, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+            }
+
+            Spacer(Modifier.width(4.dp))
+
             IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
             }

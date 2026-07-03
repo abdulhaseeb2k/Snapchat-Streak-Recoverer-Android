@@ -9,6 +9,9 @@ interface RecoveryDao {
     @Query("SELECT * FROM Profile")
     fun getAllProfiles(): Flow<List<Profile>>
 
+    @Query("SELECT * FROM Profile")
+    suspend fun getAllProfilesOnce(): List<Profile>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: Profile): Long
 
@@ -21,6 +24,9 @@ interface RecoveryDao {
     // Friend operations
     @Query("SELECT * FROM Friend WHERE profileId = :profileId")
     fun getFriendsForProfile(profileId: Int): Flow<List<Friend>>
+
+    @Query("SELECT * FROM Friend WHERE profileId = :profileId")
+    suspend fun getFriendsForProfileOnce(profileId: Int): List<Friend>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFriend(friend: Friend)
