@@ -58,6 +58,12 @@ class FriendViewModel(private val dao: RecoveryDao) : ViewModel() {
         }
     }
 
+    fun updateFriend(friend: Friend) {
+        viewModelScope.launch {
+            dao.updateFriend(friend)
+        }
+    }
+
     fun deleteFriend(friend: Friend) {
         viewModelScope.launch {
             dao.deleteFriend(friend)

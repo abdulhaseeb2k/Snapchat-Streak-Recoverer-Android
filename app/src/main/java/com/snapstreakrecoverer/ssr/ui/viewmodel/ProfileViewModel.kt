@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 
 class ProfileViewModel(private val dao: RecoveryDao) : ViewModel() {
@@ -32,6 +33,38 @@ class ProfileViewModel(private val dao: RecoveryDao) : ViewModel() {
         viewModelScope.launch {
             dao.deleteProfile(profile)
         }
+    }
+
+    /**
+     * Builds a JSON export of every profile and its friends, in the same shape
+     * that [importProfilesFromJson] consumes (keyed by profile name).
+     */
+    suspend fun buildExportJson(): String {
+        val root = JSONObject()
+        for (profile in dao.getAllProfilesOnce()) {
+            val settings = JSONObject()
+                .put("username", profile.snapchatUsername)
+                .put("email", profile.email)
+                .put("mobile_number", profile.mobileNumber)
+                .put("device", profile.device)
+                .put("refresh_delay", profile.refreshDelay)
+
+            val friendsArray = JSONArray()
+            for (friend in dao.getFriendsForProfileOnce(profile.id)) {
+                friendsArray.put(
+                    JSONObject()
+                        .put("username", friend.username)
+                        .put("name", friend.displayName)
+                        .put("selected", friend.isSelected)
+                )
+            }
+
+            root.put(
+                profile.profileName,
+                JSONObject().put("settings", settings).put("friends", friendsArray)
+            )
+        }
+        return root.toString(2)
     }
 
     fun importProfilesFromJson(jsonString: String) {

@@ -1,7 +1,9 @@
 package com.snapstreakrecoverer.ssr.ui.screens
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -40,6 +42,7 @@ fun ProfileScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<Profile?>(null) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val jsonLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -47,6 +50,24 @@ fun ProfileScreen(
         uri?.let {
             context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
                 viewModel.importProfilesFromJson(reader.readText())
+            }
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            scope.launch {
+                try {
+                    val json = viewModel.buildExportJson()
+                    context.contentResolver.openOutputStream(it)?.use { os ->
+                        os.write(json.toByteArray())
+                    }
+                    Toast.makeText(context, "Profiles exported", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -83,6 +104,14 @@ fun ProfileScreen(
             ) {
                 Text("Accounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { exportLauncher.launch("snapstreak_profiles.json") },
+                        enabled = profiles.isNotEmpty(),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("Export", fontSize = 12.sp)
+                    }
                     Button(
                         onClick = { jsonLauncher.launch("application/json") },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
