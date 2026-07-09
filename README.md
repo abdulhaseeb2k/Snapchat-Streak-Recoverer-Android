@@ -2,6 +2,14 @@
 
 An Android application designed to automate the process of submitting Snapchat streak recovery requests. This app helps users manage multiple accounts and automate the tedious form-filling process on the Snapchat Support website.
 
+## 📥 Download
+
+You can download the latest version of the app from the [Releases](https://github.com/abdulhaseeb2k/Snapchat-Streak-Recoverer-Android/releases) section. 
+
+1. Go to [Latest Release](https://github.com/abdulhaseeb2k/Snapchat-Streak-Recoverer-Android/releases/latest).
+2. Under the **Assets** section, download `app-release-signed.apk`.
+3. Open the APK on your Android device to install.
+
 ## 🚀 Features
 
 - **Multi-Account Management**: Add, edit, and delete multiple Snapchat profiles.
