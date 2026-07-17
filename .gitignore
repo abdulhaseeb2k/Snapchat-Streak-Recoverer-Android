@@ -20,3 +20,26 @@ release.jks
 *.class
 bin/
 gen/
+
+# Secrets / sensitive config (do not publish to open-source repo)
+google-services.json
+app/google-services.json
+*.keystore
+*.jks
+*.p12
+*.pem
+*.env
+.env
+secrets.properties
+keystore.properties
+
+# IDE / tooling local configs
+/.idea/
+.vscode/
+.claude/
+.cursor/
+.gemini/
+.kiro/
+.qoder/
+.mcp.json
+.opencode.json
