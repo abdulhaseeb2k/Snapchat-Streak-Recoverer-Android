@@ -7,7 +7,12 @@ import com.snapstreakrecoverer.ssr.data.RecoveryDao
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-class FriendViewModel(private val dao: RecoveryDao) : ViewModel() {
+import com.snapstreakrecoverer.ssr.sync.SyncManager
+
+class FriendViewModel(
+    private val dao: RecoveryDao,
+    private val syncManager: SyncManager? = null
+) : ViewModel() {
 
     private val _selectedProfileId = MutableStateFlow<Int?>(null)
     val selectedProfileId = _selectedProfileId.asStateFlow()
@@ -41,7 +46,9 @@ class FriendViewModel(private val dao: RecoveryDao) : ViewModel() {
 
     fun toggleFriendSelection(friend: Friend) {
         viewModelScope.launch {
-            dao.updateFriend(friend.copy(isSelected = !friend.isSelected))
+            val updated = friend.copy(isSelected = !friend.isSelected, updatedAt = System.currentTimeMillis())
+            dao.updateFriend(updated)
+            syncManager?.pushFriend(updated)
         }
     }
 
@@ -49,23 +56,34 @@ class FriendViewModel(private val dao: RecoveryDao) : ViewModel() {
         val profileId = _selectedProfileId.value ?: return
         viewModelScope.launch {
             dao.updateAllFriendsSelection(profileId, selected)
+            // Push updated friends
+            val currentFriends = dao.getFriendsForProfileOnce(profileId)
+            currentFriends.forEach { syncManager?.pushFriend(it) }
         }
     }
 
     fun addFriend(friend: Friend) {
         viewModelScope.launch {
-            dao.insertFriend(friend)
+            val friendToSave = if (friend.profileSyncId.isEmpty()) {
+                val profile = dao.getAllProfilesOnce().find { it.id == friend.profileId }
+                friend.copy(profileSyncId = profile?.syncId ?: "")
+            } else friend
+            dao.insertFriend(friendToSave)
+            syncManager?.pushFriend(friendToSave)
         }
     }
 
     fun updateFriend(friend: Friend) {
         viewModelScope.launch {
-            dao.updateFriend(friend)
+            val updated = friend.copy(updatedAt = System.currentTimeMillis())
+            dao.updateFriend(updated)
+            syncManager?.pushFriend(updated)
         }
     }
 
     fun deleteFriend(friend: Friend) {
         viewModelScope.launch {
+            syncManager?.deleteFriend(friend)
             dao.deleteFriend(friend)
         }
     }

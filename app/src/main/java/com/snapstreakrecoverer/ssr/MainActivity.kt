@@ -25,6 +25,14 @@ import com.snapstreakrecoverer.ssr.ui.viewmodel.RecoveryViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.SettingsViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.ViewModelFactory
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.snapstreakrecoverer.ssr.auth.AuthManager
+import com.snapstreakrecoverer.ssr.auth.AuthState
+import com.snapstreakrecoverer.ssr.sync.SyncManager
+import kotlinx.coroutines.launch
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,7 +41,30 @@ class MainActivity : ComponentActivity() {
         val database = RecoveryDatabase.getDatabase(this)
         val dao = database.recoveryDao()
         val themeManager = ThemeManager(this)
-        val viewModelFactory = ViewModelFactory(dao, themeManager)
+        val syncManager = SyncManager(dao)
+        val authManager = AuthManager()
+
+        syncManager.setRemoteThemeListener { remoteTheme ->
+            lifecycleScope.launch {
+                runCatching {
+                    themeManager.setThemeSelection(ThemeSelection.valueOf(remoteTheme))
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authManager.authState.collect { state ->
+                    when (state) {
+                        is AuthState.Authenticated -> syncManager.startSync(state.user.uid)
+                        is AuthState.Unauthenticated -> syncManager.stopSync()
+                        else -> Unit
+                    }
+                }
+            }
+        }
+
+        val viewModelFactory = ViewModelFactory(dao, themeManager, syncManager, authManager)
 
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)

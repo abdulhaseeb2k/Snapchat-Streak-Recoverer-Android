@@ -9,7 +9,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(private val themeManager: ThemeManager) : ViewModel() {
+import com.snapstreakrecoverer.ssr.sync.SyncManager
+
+class SettingsViewModel(
+    private val themeManager: ThemeManager,
+    private val syncManager: SyncManager? = null
+) : ViewModel() {
 
     val themeSelection: StateFlow<ThemeSelection> = themeManager.themeSelection
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeSelection.SYSTEM)
@@ -17,6 +22,7 @@ class SettingsViewModel(private val themeManager: ThemeManager) : ViewModel() {
     fun setThemeSelection(selection: ThemeSelection) {
         viewModelScope.launch {
             themeManager.setThemeSelection(selection)
+            syncManager?.syncTheme(selection.name)
         }
     }
 }

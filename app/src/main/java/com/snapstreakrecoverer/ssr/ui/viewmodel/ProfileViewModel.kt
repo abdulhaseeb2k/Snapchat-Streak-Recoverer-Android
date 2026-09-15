@@ -12,25 +12,35 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
-class ProfileViewModel(private val dao: RecoveryDao) : ViewModel() {
+import com.snapstreakrecoverer.ssr.sync.SyncManager
+
+class ProfileViewModel(
+    private val dao: RecoveryDao,
+    private val syncManager: SyncManager? = null
+) : ViewModel() {
 
     val allProfiles: StateFlow<List<Profile>> = dao.getAllProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun insertProfile(profile: Profile) {
         viewModelScope.launch {
-            dao.insertProfile(profile)
+            val id = dao.insertProfile(profile)
+            val inserted = if (profile.id == 0) profile.copy(id = id.toInt()) else profile
+            syncManager?.pushProfile(inserted)
         }
     }
 
     fun updateProfile(profile: Profile) {
         viewModelScope.launch {
-            dao.updateProfile(profile)
+            val updated = profile.copy(updatedAt = System.currentTimeMillis())
+            dao.updateProfile(updated)
+            syncManager?.pushProfile(updated)
         }
     }
 
     fun deleteProfile(profile: Profile) {
         viewModelScope.launch {
+            syncManager?.deleteProfile(profile)
             dao.deleteProfile(profile)
         }
     }
@@ -87,17 +97,21 @@ class ProfileViewModel(private val dao: RecoveryDao) : ViewModel() {
                     )
                     
                     val profileId = dao.insertProfile(profile).toInt()
+                    val savedProfile = profile.copy(id = profileId)
+                    syncManager?.pushProfile(savedProfile)
                     
                     val friendsArray = profileData.getJSONArray("friends")
                     for (i in 0 until friendsArray.length()) {
                         val friendObj = friendsArray.getJSONObject(i)
                         val friend = Friend(
                             profileId = profileId,
+                            profileSyncId = savedProfile.syncId,
                             username = friendObj.getString("username"),
                             displayName = friendObj.optString("name", ""),
                             isSelected = friendObj.optBoolean("selected", true)
                         )
                         dao.insertFriend(friend)
+                        syncManager?.pushFriend(friend)
                     }
                 }
             } catch (e: Exception) {
