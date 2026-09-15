@@ -19,6 +19,7 @@ import com.snapstreakrecoverer.ssr.ui.screens.SettingsScreen
 import com.snapstreakrecoverer.ssr.ui.theme.SSRTheme
 import com.snapstreakrecoverer.ssr.ui.theme.ThemeManager
 import com.snapstreakrecoverer.ssr.ui.theme.ThemeSelection
+import com.snapstreakrecoverer.ssr.ui.viewmodel.AuthViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.FriendViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.ProfileViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.RecoveryViewModel
@@ -86,12 +87,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigation(viewModelFactory: ViewModelFactory) {
     val navController = rememberNavController()
+    val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
     
     NavHost(navController = navController, startDestination = "profiles") {
         composable("profiles") {
             val viewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
             ProfileScreen(
                 viewModel = viewModel,
+                authViewModel = authViewModel,
                 onProfileSelected = { profile ->
                     navController.navigate("friends/${profile.id}")
                 },
@@ -104,6 +107,7 @@ fun AppNavigation(viewModelFactory: ViewModelFactory) {
             val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
             SettingsScreen(
                 viewModel = settingsViewModel,
+                authViewModel = authViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

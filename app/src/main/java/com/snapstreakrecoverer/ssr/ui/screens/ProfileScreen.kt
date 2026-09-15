@@ -31,14 +31,19 @@ import com.snapstreakrecoverer.ssr.ui.theme.Avatar
 import com.snapstreakrecoverer.ssr.ui.theme.ProfileInactive
 import com.snapstreakrecoverer.ssr.ui.viewmodel.ProfileViewModel
 
+import com.snapstreakrecoverer.ssr.auth.AuthState
+import com.snapstreakrecoverer.ssr.ui.viewmodel.AuthViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel,
+    authViewModel: AuthViewModel? = null,
     onProfileSelected: (Profile) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val profiles by viewModel.allProfiles.collectAsState()
+    val authState by authViewModel?.authState?.collectAsState() ?: remember { mutableStateOf(AuthState.Unauthenticated) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<Profile?>(null) }
     val context = LocalContext.current
@@ -97,6 +102,14 @@ fun ProfileScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(horizontal = 18.dp)) {
+            if (authState is AuthState.Unauthenticated) {
+                CloudSyncBanner(
+                    onSignInClick = {
+                        authViewModel?.signIn(context)
+                    }
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -269,4 +282,44 @@ fun EditProfileDialog(profile: Profile, onDismiss: () -> Unit, onSave: (Profile)
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+fun CloudSyncBanner(onSignInClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Cloud Sync Available",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "Sign in with Google to backup and sync your profiles across devices.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onSignInClick,
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("Sign In", fontSize = 12.sp)
+            }
+        }
+    }
 }
