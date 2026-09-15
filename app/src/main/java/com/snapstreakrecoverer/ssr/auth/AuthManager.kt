@@ -24,7 +24,7 @@ sealed interface AuthState {
 
 class AuthManager(
     private val firebaseAuth: FirebaseAuth? = runCatching { FirebaseAuth.getInstance() }.getOrNull(),
-    private val webClientId: String = ""
+    private val webClientId: String = "1073400338462-117lvbsvub9gt2bua0akr76avdj4vi4j.apps.googleusercontent.com"
 ) {
     private val _authState = MutableStateFlow<AuthState>(
         firebaseAuth?.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated

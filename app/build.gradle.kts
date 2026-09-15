@@ -10,7 +10,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.snapstreakrecoverer.ssr"
+        applicationId = "com.abdulhaseeb2k.ssr"
         minSdk = 31
         targetSdk = 35
         versionCode = 1
