@@ -12,7 +12,7 @@
 *(No active bugs currently tracked for this module)*
 
 ## Suggestions & Features (Future ideas and enhancements)
-- [ ] **Google Authentication and Firebase Database integration for cross-device syncing** #suggestion #todo #firebase-sync
+- [x] **Google Authentication and Firebase Database integration for cross-device syncing** #suggestion #todo #firebase-sync
   - **Feature:** Implement Google Authentication and Firebase Database integration to synchronize profiles, friend lists, and settings across multiple devices.
   - **Workflow:** When a user logs in via Google Auth, the app authenticates against Firebase and establishes a connection to the user's remote cloud datastore.
   - **Data Strategy:** Implement real-time data syncing.
