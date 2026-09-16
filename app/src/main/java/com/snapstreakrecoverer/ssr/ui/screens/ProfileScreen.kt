@@ -10,6 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -104,13 +106,17 @@ fun ProfileScreen(
                                     brush = Brush.horizontalGradient(
                                         listOf(Color(0xFFFFFC00), Color(0xFFFFB700))
                                     )
-                                )
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         Text(
                             "Automated Support Form Submitter",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 },
@@ -186,21 +192,25 @@ fun ProfileScreen(
                                 }
                             }
                             Spacer(Modifier.width(10.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     "Update v${updateInfo.latestVersion} Available",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     "Tap to download latest release APK",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
-
+                        Spacer(Modifier.width(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Button(
                                 onClick = {
@@ -229,13 +239,13 @@ fun ProfileScreen(
                 }
             }
 
-            // Section Header: Accounts Count & Actions
-            Row(
+            // Section Header: Accounts Count & Actions (Fully Responsive with FlowRow)
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 14.dp),
+                    .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -261,25 +271,30 @@ fun ProfileScreen(
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     OutlinedButton(
                         onClick = { exportLauncher.launch("snapstreak_profiles.json") },
                         enabled = profiles.isNotEmpty(),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 34.dp)
                     ) {
-                        Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.Upload, contentDescription = "Export", modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Export", fontSize = 12.sp)
+                        Text("Export", fontSize = 11.sp)
                     }
                     OutlinedButton(
                         onClick = { jsonLauncher.launch("application/json") },
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 34.dp)
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.Download, contentDescription = "Import", modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Import", fontSize = 12.sp)
+                        Text("Import", fontSize = 11.sp)
                     }
                     Button(
                         onClick = { showAddDialog = true },
@@ -288,11 +303,12 @@ fun ProfileScreen(
                             containerColor = Primary,
                             contentColor = Color(0xFF0F0F17)
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 34.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Add, contentDescription = "Add Account", modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Add", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Add Account", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -816,7 +832,10 @@ fun AddProfileDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -963,7 +982,10 @@ fun EditProfileDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

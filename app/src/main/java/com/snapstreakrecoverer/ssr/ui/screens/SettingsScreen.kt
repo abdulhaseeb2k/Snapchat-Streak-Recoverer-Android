@@ -2,6 +2,8 @@ package com.snapstreakrecoverer.ssr.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import android.content.Intent
 import android.net.Uri
 import com.snapstreakrecoverer.ssr.auth.AuthState
@@ -50,11 +53,13 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(16.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
@@ -213,17 +218,23 @@ fun SettingsScreen(
                                         }
                                     }
                                     Spacer(Modifier.width(12.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f, fill = false)) {
                                         Text(
                                             state.user.displayName ?: "Google User",
                                             style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                        Text(
-                                            state.user.email ?: "",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        if (!state.user.email.isNullOrBlank()) {
+                                            Text(
+                                                state.user.email!!,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                         Spacer(Modifier.height(4.dp))
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
@@ -250,6 +261,7 @@ fun SettingsScreen(
                                         }
                                     }
                                 }
+                                Spacer(Modifier.width(8.dp))
                                 OutlinedButton(
                                     onClick = { showSignOutDialog = true },
                                     shape = RoundedCornerShape(10.dp),
@@ -447,57 +459,119 @@ fun SettingsScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-                    // Update Status Row
-                    Row(
+                    // Update Status Section (Responsive 2-Tier Layout)
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("GitHub Updates", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.SystemUpdate,
+                                    contentDescription = null,
+                                    tint = Primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    "GitHub Updates",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
                             when (val state = updateState) {
-                                is UpdateCheckState.Idle -> {
-                                    Text("Check for newer releases", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
                                 is UpdateCheckState.Checking -> {
-                                    Text("Checking GitHub...", style = MaterialTheme.typography.bodySmall, color = Primary)
-                                }
-                                is UpdateCheckState.UpToDate -> {
-                                    Text("App is up to date (v${state.currentVersion})", style = MaterialTheme.typography.bodySmall, color = Color(0xFF10A37F))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.5.dp,
+                                        color = Primary
+                                    )
                                 }
                                 is UpdateCheckState.Available -> {
-                                    Text("Update v${state.info.latestVersion} available!", style = MaterialTheme.typography.bodySmall, color = Primary, fontWeight = FontWeight.Bold)
+                                    Button(
+                                        onClick = { showUpdateDialog = state.info },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Primary,
+                                            contentColor = Color.Black
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
                                 }
-                                is UpdateCheckState.Error -> {
-                                    Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                else -> {
+                                    OutlinedButton(
+                                        onClick = { viewModel.checkForUpdates() },
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Check", fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
 
+                        // Full-width status feedback row below header
                         when (val state = updateState) {
+                            is UpdateCheckState.Idle -> {
+                                Text(
+                                    "Check for newer releases from GitHub repository",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             is UpdateCheckState.Checking -> {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp, color = Primary)
+                                Text(
+                                    "Checking GitHub releases...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Primary
+                                )
+                            }
+                            is UpdateCheckState.UpToDate -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10A37F),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        "App is up to date (v${state.currentVersion})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF10A37F),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
                             }
                             is UpdateCheckState.Available -> {
-                                Button(
-                                    onClick = { showUpdateDialog = state.info },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black),
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Update", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
+                                Text(
+                                    "New version v${state.info.latestVersion} is available to download!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Primary,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                            else -> {
-                                OutlinedButton(
-                                    onClick = { viewModel.checkForUpdates() },
-                                    shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Check", fontSize = 12.sp)
-                                }
+                            is UpdateCheckState.Error -> {
+                                Text(
+                                    state.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
                             }
                         }
                     }
