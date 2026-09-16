@@ -364,7 +364,12 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("App Version", style = MaterialTheme.typography.bodyMedium)
-                        Text("1.0.0", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            com.snapstreakrecoverer.ssr.BuildConfig.VERSION_NAME,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(
