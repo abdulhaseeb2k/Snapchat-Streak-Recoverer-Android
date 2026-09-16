@@ -1,0 +1,1 @@
+1.Implement auto update checking from github release.

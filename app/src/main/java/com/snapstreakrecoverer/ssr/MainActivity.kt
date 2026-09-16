@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(viewModelFactory: ViewModelFactory) {
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel(factory = viewModelFactory)
+    val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
     
     NavHost(navController = navController, startDestination = "profiles") {
         composable("profiles") {
@@ -95,6 +96,7 @@ fun AppNavigation(viewModelFactory: ViewModelFactory) {
             ProfileScreen(
                 viewModel = viewModel,
                 authViewModel = authViewModel,
+                settingsViewModel = settingsViewModel,
                 onProfileSelected = { profile ->
                     navController.navigate("friends/${profile.id}")
                 },

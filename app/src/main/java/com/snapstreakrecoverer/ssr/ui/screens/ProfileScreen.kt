@@ -27,6 +27,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.unit.sp
 import com.snapstreakrecoverer.ssr.auth.AuthState
 import com.snapstreakrecoverer.ssr.data.Profile
@@ -36,6 +38,8 @@ import com.snapstreakrecoverer.ssr.ui.theme.Primary
 import com.snapstreakrecoverer.ssr.ui.theme.ProfileActive
 import com.snapstreakrecoverer.ssr.ui.viewmodel.AuthViewModel
 import com.snapstreakrecoverer.ssr.ui.viewmodel.ProfileViewModel
+import com.snapstreakrecoverer.ssr.ui.viewmodel.SettingsViewModel
+import com.snapstreakrecoverer.ssr.update.UpdateCheckState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +47,7 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     authViewModel: AuthViewModel? = null,
+    settingsViewModel: SettingsViewModel? = null,
     onProfileSelected: (Profile) -> Unit,
     onSettingsClick: () -> Unit
 ) {
@@ -139,6 +144,90 @@ fun ProfileScreen(
                 onDismissError = { authViewModel?.clearError() },
                 onManageClick = onSettingsClick
             )
+
+            val updateState by settingsViewModel?.updateState?.collectAsState() ?: remember { mutableStateOf(UpdateCheckState.Idle) }
+
+            LaunchedEffect(Unit) {
+                settingsViewModel?.checkForUpdates()
+            }
+
+            if (updateState is UpdateCheckState.Available) {
+                val updateInfo = (updateState as UpdateCheckState.Available).info
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Primary,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    "Update v${updateInfo.latestVersion} Available",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    "Tap to download latest release APK",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.downloadUrl))
+                                    context.startActivity(intent)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Update", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                            IconButton(
+                                onClick = { settingsViewModel?.clearUpdateState() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             // Section Header: Accounts Count & Actions
             Row(
