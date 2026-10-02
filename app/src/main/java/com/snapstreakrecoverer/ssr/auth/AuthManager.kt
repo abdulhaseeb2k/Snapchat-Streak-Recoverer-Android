@@ -53,89 +53,65 @@ class AuthManager(
             return Result.failure(IllegalStateException(err))
         }
 
-        val activity = context.findActivity()
-        if (activity == null) {
-            val err = "Cannot initiate Google sign-in without a foreground Activity."
-            _authState.value = AuthState.Error(err)
-            return Result.failure(IllegalStateException(err))
-        }
-
+        val activity = context.findActivity() ?: context
         _authState.value = AuthState.Loading
 
-        return try {
-            withTimeout(60_000L) {
-                val credentialManager = CredentialManager.create(activity)
-                val clientId = if (webClientId.isNotEmpty()) webClientId else "dummy-client-id"
+        val credentialManager = CredentialManager.create(activity)
+        val clientId = if (webClientId.isNotEmpty()) webClientId else "dummy-client-id"
 
-                // 1. Fetch credential
-                // Android 14+ (API 34+) uses native Credential Manager dialog (GetSignInWithGoogleOption).
-                // Android 13 and below (e.g. Vivo Android 9/10) uses Google Play Services bottom sheet (GetGoogleIdOption)
-                // directly, preventing double-popup glitches and OEM cancellation loops.
-                val credential = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    try {
-                        val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
-                            .build()
-                        val request = GetCredentialRequest.Builder()
-                            .addCredentialOption(signInOption)
-                            .build()
+        // 1. Retrieve Credential from CredentialManager
+        // Primary Attempt: GetSignInWithGoogleOption (Official user-initiated button flow)
+        // Fallback Attempt: GetGoogleIdOption (Universal Play Services bottom sheet for compatibility)
+        val credential = try {
+            val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
+                .build()
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(signInOption)
+                .build()
 
-                        val response = credentialManager.getCredential(context = activity, request = request)
-                        response.credential
-                    } catch (e: GetCredentialCancellationException) {
-                        Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
-                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                        return@withTimeout Result.failure(e)
-                    } catch (firstAttemptException: Throwable) {
-                        Log.w("AuthManager", "GetSignInWithGoogleOption failed or unhandled (${firstAttemptException.javaClass.simpleName}: ${firstAttemptException.message}), falling back to universal GetGoogleIdOption")
-                        val googleIdOption = GetGoogleIdOption.Builder()
-                            .setFilterByAuthorizedAccounts(false)
-                            .setServerClientId(clientId)
-                            .setAutoSelectEnabled(false)
-                            .build()
-                        val fallbackRequest = GetCredentialRequest.Builder()
-                            .addCredentialOption(googleIdOption)
-                            .build()
+            val response = credentialManager.getCredential(context = activity, request = request)
+            response.credential
+        } catch (e: GetCredentialCancellationException) {
+            Log.i("AuthManager", "User explicitly cancelled Google sign-in dialog")
+            _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+            return Result.failure(e)
+        } catch (primaryException: Throwable) {
+            Log.w("AuthManager", "Primary GetSignInWithGoogleOption failed (${primaryException.javaClass.simpleName}: ${primaryException.message}), attempting GetGoogleIdOption fallback")
+            try {
+                val googleIdOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(clientId)
+                    .setAutoSelectEnabled(false)
+                    .build()
+                val fallbackRequest = GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
 
-                        val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
-                        fallbackResponse.credential
-                    }
-                } else {
-                    // Android 13 and below: direct GetGoogleIdOption (1 single clean account picker)
-                    try {
-                        val googleIdOption = GetGoogleIdOption.Builder()
-                            .setFilterByAuthorizedAccounts(false)
-                            .setServerClientId(clientId)
-                            .setAutoSelectEnabled(false)
-                            .build()
-                        val request = GetCredentialRequest.Builder()
-                            .addCredentialOption(googleIdOption)
-                            .build()
-
-                        val response = credentialManager.getCredential(context = activity, request = request)
-                        response.credential
-                    } catch (e: GetCredentialCancellationException) {
-                        Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
-                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                        return@withTimeout Result.failure(e)
-                    }
-                }
-
-                // 2. Authenticate with Firebase using retrieved credential
-                val user = authenticateWithCredential(auth, credential)
-                _authState.value = AuthState.Authenticated(user)
-                Result.success(user)
-            }
-        } catch (t: Throwable) {
-            if (t is CancellationException && t !is TimeoutCancellationException) {
-                // Normal coroutine cancellation
+                val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
+                fallbackResponse.credential
+            } catch (e: GetCredentialCancellationException) {
+                Log.i("AuthManager", "User cancelled Google sign-in on fallback")
                 _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                Result.failure(t)
-            } else {
-                Log.e("AuthManager", "Sign-in error: ${t.javaClass.simpleName} - ${t.message}", t)
-                val friendlyMessage = mapUserFriendlyError(t)
+                return Result.failure(e)
+            } catch (fallbackException: Throwable) {
+                Log.e("AuthManager", "Both Google sign-in options failed: ${fallbackException.javaClass.simpleName} - ${fallbackException.message}", fallbackException)
+                val finalEx = if (fallbackException is NoCredentialException) primaryException else fallbackException
+                val friendlyMessage = mapUserFriendlyError(finalEx)
                 _authState.value = AuthState.Error(friendlyMessage)
-                Result.failure(t)
+                return Result.failure(finalEx)
             }
+        }
+
+        // 2. Authenticate with Firebase using retrieved credential
+        return try {
+            val user = authenticateWithCredential(auth, credential)
+            _authState.value = AuthState.Authenticated(user)
+            Result.success(user)
+        } catch (authException: Throwable) {
+            Log.e("AuthManager", "Firebase token authentication failed: ${authException.javaClass.simpleName} - ${authException.message}", authException)
+            val friendlyMessage = mapUserFriendlyError(authException)
+            _authState.value = AuthState.Error(friendlyMessage)
+            Result.failure(authException)
         }
     }
 
@@ -158,19 +134,18 @@ class AuthManager(
 
     private fun mapUserFriendlyError(e: Throwable): String {
         val raw = e.localizedMessage ?: e.message ?: ""
+        val errorType = e.javaClass.simpleName
         return when {
             e is TimeoutCancellationException ->
                 "Sign-in timed out. Please check your internet connection and try again."
             e is NoCredentialException || raw.contains("NoCredentialException", ignoreCase = true) ->
                 "No Google account found or prompt unavailable. Please ensure a Google account is added in device settings and Google Play Services is updated."
             raw.contains("DEVELOPER_ERROR", ignoreCase = true) || raw.contains(": 10", ignoreCase = true) || raw.contains("code: 10", ignoreCase = true) ->
-                "Google Play Services configuration error (Code 10). Please ensure Google Play Services is updated."
-            raw.contains("network", ignoreCase = true) || raw.contains("timeout", ignoreCase = true) || raw.contains("connection", ignoreCase = true) ->
-                "Network connection error. Please check your internet connection and try again."
+                "Google Play Services configuration error (Code 10: DEVELOPER_ERROR). Please ensure Release SHA-1 is added and Google Play Services is updated."
             raw.contains("SamsungPass", ignoreCase = true) ->
                 "Samsung Pass credential conflict. Please allow Google Play Services to handle sign-in."
-            raw.isNotBlank() -> raw
-            else -> "Unable to sign in with Google. Please try again."
+            raw.isNotBlank() -> "Sign-in error ($errorType): $raw"
+            else -> "Google sign-in error ($errorType). Please try again."
         }
     }
 
