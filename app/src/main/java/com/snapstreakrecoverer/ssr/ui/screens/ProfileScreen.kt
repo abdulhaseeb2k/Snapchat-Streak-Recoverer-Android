@@ -153,6 +153,7 @@ fun ProfileScreen(
             )
 
             val updateState by settingsViewModel?.updateState?.collectAsState() ?: remember { mutableStateOf(UpdateCheckState.Idle) }
+            val downloadState by settingsViewModel?.downloadState?.collectAsState() ?: remember { mutableStateOf(com.snapstreakrecoverer.ssr.update.DownloadState.Idle) }
 
             LaunchedEffect(Unit) {
                 settingsViewModel?.checkForUpdates()
@@ -167,72 +168,145 @@ fun ProfileScreen(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Primary,
-                                modifier = Modifier.size(34.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Default.SystemUpdate,
-                                        contentDescription = null,
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(18.dp)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Primary,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Default.SystemUpdate,
+                                            contentDescription = null,
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f, fill = false)) {
+                                    Text(
+                                        "Update v${updateInfo.latestVersion} Available",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        when (val ds = downloadState) {
+                                            is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading -> {
+                                                val pct = if (ds.progress >= 0f) "${(ds.progress * 100).toInt()}%" else "Downloading..."
+                                                val mb = if (ds.totalBytes > 0) " (${ds.bytesDownloaded / 1048576}MB / ${ds.totalBytes / 1048576}MB)" else ""
+                                                "$pct$mb"
+                                            }
+                                            is com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall -> "Download complete. Tap to install!"
+                                            is com.snapstreakrecoverer.ssr.update.DownloadState.Error -> "Download error: ${ds.message}"
+                                            else -> "In-app download & auto-install"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                            Spacer(Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
-                                Text(
-                                    "Update v${updateInfo.latestVersion} Available",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "Tap to download latest release APK",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            Spacer(Modifier.width(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                when (val ds = downloadState) {
+                                    is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading -> {
+                                        IconButton(
+                                            onClick = { settingsViewModel?.dismissDownload(context) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Cancel Download",
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                    is com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall -> {
+                                        Button(
+                                            onClick = { settingsViewModel?.installApk(context, ds.apkFile) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10A37F), contentColor = Color.White),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Install", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                    }
+                                    is com.snapstreakrecoverer.ssr.update.DownloadState.Error -> {
+                                        Button(
+                                            onClick = { settingsViewModel?.startDownload(context, updateInfo.downloadUrl, updateInfo.latestVersion) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Retry", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                    }
+                                    else -> {
+                                        Button(
+                                            onClick = { settingsViewModel?.startDownload(context, updateInfo.downloadUrl, updateInfo.latestVersion) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(13.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Download", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        }
+                                        IconButton(
+                                            onClick = { settingsViewModel?.clearUpdateState() },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Dismiss",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.downloadUrl))
-                                    context.startActivity(intent)
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text("Update", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-                            IconButton(
-                                onClick = { settingsViewModel?.clearUpdateState() },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Dismiss",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+
+                        // Real-time downloading progress bar
+                        if (downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading) {
+                            val ds = downloadState as com.snapstreakrecoverer.ssr.update.DownloadState.Downloading
+                            Spacer(Modifier.height(8.dp))
+                            if (ds.progress >= 0f) {
+                                LinearProgressIndicator(
+                                    progress = { ds.progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = Primary,
+                                    trackColor = Primary.copy(alpha = 0.25f)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = Primary,
+                                    trackColor = Primary.copy(alpha = 0.25f)
                                 )
                             }
                         }

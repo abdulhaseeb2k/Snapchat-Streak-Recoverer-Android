@@ -25,6 +25,9 @@ class SettingsViewModel(
     private val _updateState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
     val updateState: StateFlow<UpdateCheckState> = _updateState.asStateFlow()
 
+    private val _downloadState = MutableStateFlow<com.snapstreakrecoverer.ssr.update.DownloadState>(com.snapstreakrecoverer.ssr.update.DownloadState.Idle)
+    val downloadState: StateFlow<com.snapstreakrecoverer.ssr.update.DownloadState> = _downloadState.asStateFlow()
+
     fun setThemeSelection(selection: ThemeSelection) {
         viewModelScope.launch {
             themeManager.setThemeSelection(selection)
@@ -50,6 +53,38 @@ class SettingsViewModel(
                 }
             )
         }
+    }
+
+    fun startDownload(context: android.content.Context, downloadUrl: String, version: String) {
+        if (_downloadState.value is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading) return
+        _downloadState.value = com.snapstreakrecoverer.ssr.update.DownloadState.Downloading(0f, 0L, 0L)
+        viewModelScope.launch {
+            val result = UpdateManager.downloadApk(
+                context = context,
+                downloadUrl = downloadUrl,
+                version = version,
+                onProgress = { progress, downloaded, total ->
+                    _downloadState.value = com.snapstreakrecoverer.ssr.update.DownloadState.Downloading(progress, downloaded, total)
+                }
+            )
+            result.fold(
+                onSuccess = { file ->
+                    _downloadState.value = com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall(file)
+                },
+                onFailure = { error ->
+                    _downloadState.value = com.snapstreakrecoverer.ssr.update.DownloadState.Error(error.localizedMessage ?: "Download failed")
+                }
+            )
+        }
+    }
+
+    fun installApk(context: android.content.Context, apkFile: java.io.File) {
+        UpdateManager.installApk(context, apkFile)
+    }
+
+    fun dismissDownload(context: android.content.Context? = null) {
+        _downloadState.value = com.snapstreakrecoverer.ssr.update.DownloadState.Idle
+        context?.let { UpdateManager.cleanupOldApks(it) }
     }
 
     fun clearUpdateState() {

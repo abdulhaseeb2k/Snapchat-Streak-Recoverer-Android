@@ -45,6 +45,9 @@ class MainActivity : ComponentActivity() {
         val syncManager = SyncManager(dao)
         val authManager = AuthManager()
 
+        // Clean up any previously installed update APKs to preserve user disk space
+        com.snapstreakrecoverer.ssr.update.UpdateManager.cleanupOldApks(this)
+
         syncManager.setRemoteThemeListener { remoteTheme ->
             lifecycleScope.launch {
                 runCatching {

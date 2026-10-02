@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.clip
 import android.content.Intent
 import android.net.Uri
 import com.snapstreakrecoverer.ssr.auth.AuthState
@@ -39,6 +40,7 @@ fun SettingsScreen(
 ) {
     val themeSelection by viewModel.themeSelection.collectAsState()
     val authState by authViewModel?.authState?.collectAsState() ?: remember { mutableStateOf(AuthState.Unauthenticated) }
+    val downloadState by viewModel.downloadState.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
@@ -412,15 +414,31 @@ fun SettingsScreen(
                         }
                     },
                     confirmButton = {
-                        Button(
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl))
-                                context.startActivity(intent)
-                                showUpdateDialog = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black)
-                        ) {
-                            Text("Download APK", fontWeight = FontWeight.Bold)
+                        val ds = downloadState
+                        if (ds is com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall) {
+                            Button(
+                                onClick = {
+                                    viewModel.installApk(context, ds.apkFile)
+                                    showUpdateDialog = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10A37F), contentColor = Color.White)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Install Now", fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    viewModel.startDownload(context, info.downloadUrl, info.latestVersion)
+                                    showUpdateDialog = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Primary, contentColor = Color.Black)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Download & Install", fontWeight = FontWeight.Bold)
+                            }
                         }
                     },
                     dismissButton = {
@@ -491,15 +509,43 @@ fun SettingsScreen(
                                 )
                             }
 
-                            when (val state = updateState) {
-                                is UpdateCheckState.Checking -> {
+                            when {
+                                downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading -> {
+                                    OutlinedButton(
+                                        onClick = { viewModel.dismissDownload(context) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Cancel", fontSize = 12.sp)
+                                    }
+                                }
+                                downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall -> {
+                                    val ds = downloadState as com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall
+                                    Button(
+                                        onClick = { viewModel.installApk(context, ds.apkFile) },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF10A37F),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("Install", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                }
+                                updateState is UpdateCheckState.Checking -> {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(22.dp),
                                         strokeWidth = 2.5.dp,
                                         color = Primary
                                     )
                                 }
-                                is UpdateCheckState.Available -> {
+                                updateState is UpdateCheckState.Available -> {
+                                    val state = updateState as UpdateCheckState.Available
                                     Button(
                                         onClick = { showUpdateDialog = state.info },
                                         colors = ButtonDefaults.buttonColors(
@@ -528,55 +574,102 @@ fun SettingsScreen(
                             }
                         }
 
-                        // Full-width status feedback row below header
-                        when (val state = updateState) {
-                            is UpdateCheckState.Idle -> {
-                                Text(
-                                    "Check for newer releases from GitHub repository",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                        // Downloading progress bar if active
+                        if (downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.Downloading) {
+                            val ds = downloadState as com.snapstreakrecoverer.ssr.update.DownloadState.Downloading
+                            val pct = if (ds.progress >= 0f) "${(ds.progress * 100).toInt()}%" else "Downloading..."
+                            val mb = if (ds.totalBytes > 0) " (${ds.bytesDownloaded / 1048576}MB / ${ds.totalBytes / 1048576}MB)" else ""
+                            Text(
+                                "Downloading update: $pct$mb",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (ds.progress >= 0f) {
+                                LinearProgressIndicator(
+                                    progress = { ds.progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = Primary,
+                                    trackColor = Primary.copy(alpha = 0.25f)
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = Primary,
+                                    trackColor = Primary.copy(alpha = 0.25f)
                                 )
                             }
-                            is UpdateCheckState.Checking -> {
-                                Text(
-                                    "Checking GitHub releases...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Primary
-                                )
-                            }
-                            is UpdateCheckState.UpToDate -> {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = Color(0xFF10A37F),
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                        } else if (downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.ReadyToInstall) {
+                            Text(
+                                "Download complete. Tap Install above to update SSR.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF10A37F),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        } else if (downloadState is com.snapstreakrecoverer.ssr.update.DownloadState.Error) {
+                            val ds = downloadState as com.snapstreakrecoverer.ssr.update.DownloadState.Error
+                            Text(
+                                ds.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else {
+                            // Full-width status feedback row below header
+                            when (val state = updateState) {
+                                is UpdateCheckState.Idle -> {
                                     Text(
-                                        "App is up to date (v${state.currentVersion})",
+                                        "Check for newer releases from GitHub repository",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF10A37F),
-                                        fontWeight = FontWeight.Medium
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                            }
-                            is UpdateCheckState.Available -> {
-                                Text(
-                                    "New version v${state.info.latestVersion} is available to download!",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Primary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            is UpdateCheckState.Error -> {
-                                Text(
-                                    state.message,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
+                                is UpdateCheckState.Checking -> {
+                                    Text(
+                                        "Checking GitHub releases...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Primary
+                                    )
+                                }
+                                is UpdateCheckState.UpToDate -> {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10A37F),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            "App is up to date (v${state.currentVersion})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFF10A37F),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                                is UpdateCheckState.Available -> {
+                                    Text(
+                                        "New version v${state.info.latestVersion} is available to download!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                is UpdateCheckState.Error -> {
+                                    Text(
+                                        state.message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }

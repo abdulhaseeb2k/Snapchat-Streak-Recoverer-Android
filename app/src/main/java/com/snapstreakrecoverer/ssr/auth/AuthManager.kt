@@ -69,21 +69,17 @@ class AuthManager(
 
                 // 1. Fetch credential (Attempt 1: GetSignInWithGoogleOption, Fallback: GetGoogleIdOption)
                 val credential = try {
-                    val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
-                        .build()
-                    val request = GetCredentialRequest.Builder()
-                        .addCredentialOption(signInOption)
-                        .build()
-
-                    val response = credentialManager.getCredential(context = activity, request = request)
-                    response.credential
-                } catch (e: GetCredentialCancellationException) {
-                    Log.i("AuthManager", "User cancelled Google sign-in")
-                    _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                    return@withTimeout Result.failure(e)
-                } catch (firstAttemptException: Throwable) {
-                    Log.w("AuthManager", "GetSignInWithGoogleOption failed, falling back to GetGoogleIdOption: ${firstAttemptException.message}")
                     try {
+                        val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
+                            .build()
+                        val request = GetCredentialRequest.Builder()
+                            .addCredentialOption(signInOption)
+                            .build()
+
+                        val response = credentialManager.getCredential(context = activity, request = request)
+                        response.credential
+                    } catch (firstAttemptException: Throwable) {
+                        Log.w("AuthManager", "GetSignInWithGoogleOption failed or unhandled (${firstAttemptException.javaClass.simpleName}: ${firstAttemptException.message}), falling back to universal GetGoogleIdOption")
                         val googleIdOption = GetGoogleIdOption.Builder()
                             .setFilterByAuthorizedAccounts(false)
                             .setServerClientId(clientId)
@@ -95,11 +91,11 @@ class AuthManager(
 
                         val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
                         fallbackResponse.credential
-                    } catch (e: GetCredentialCancellationException) {
-                        Log.i("AuthManager", "User cancelled Google sign-in on fallback")
-                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                        return@withTimeout Result.failure(e)
                     }
+                } catch (e: GetCredentialCancellationException) {
+                    Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
+                    _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+                    return@withTimeout Result.failure(e)
                 }
 
                 // 2. Authenticate with Firebase using retrieved credential
