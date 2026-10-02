@@ -63,12 +63,15 @@ class AuthManager(
         _authState.value = AuthState.Loading
 
         return try {
-            withTimeout(25_000L) {
+            withTimeout(60_000L) {
                 val credentialManager = CredentialManager.create(activity)
                 val clientId = if (webClientId.isNotEmpty()) webClientId else "dummy-client-id"
 
-                // 1. Fetch credential (Attempt 1: GetSignInWithGoogleOption, Fallback: GetGoogleIdOption)
-                val credential = try {
+                // 1. Fetch credential
+                // Android 14+ (API 34+) uses native Credential Manager dialog (GetSignInWithGoogleOption).
+                // Android 13 and below (e.g. Vivo Android 9/10) uses Google Play Services bottom sheet (GetGoogleIdOption)
+                // directly, preventing double-popup glitches and OEM cancellation loops.
+                val credential = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     try {
                         val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
                             .build()
@@ -78,6 +81,10 @@ class AuthManager(
 
                         val response = credentialManager.getCredential(context = activity, request = request)
                         response.credential
+                    } catch (e: GetCredentialCancellationException) {
+                        Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
+                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+                        return@withTimeout Result.failure(e)
                     } catch (firstAttemptException: Throwable) {
                         Log.w("AuthManager", "GetSignInWithGoogleOption failed or unhandled (${firstAttemptException.javaClass.simpleName}: ${firstAttemptException.message}), falling back to universal GetGoogleIdOption")
                         val googleIdOption = GetGoogleIdOption.Builder()
@@ -92,10 +99,25 @@ class AuthManager(
                         val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
                         fallbackResponse.credential
                     }
-                } catch (e: GetCredentialCancellationException) {
-                    Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
-                    _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                    return@withTimeout Result.failure(e)
+                } else {
+                    // Android 13 and below: direct GetGoogleIdOption (1 single clean account picker)
+                    try {
+                        val googleIdOption = GetGoogleIdOption.Builder()
+                            .setFilterByAuthorizedAccounts(false)
+                            .setServerClientId(clientId)
+                            .setAutoSelectEnabled(false)
+                            .build()
+                        val request = GetCredentialRequest.Builder()
+                            .addCredentialOption(googleIdOption)
+                            .build()
+
+                        val response = credentialManager.getCredential(context = activity, request = request)
+                        response.credential
+                    } catch (e: GetCredentialCancellationException) {
+                        Log.i("AuthManager", "User explicitly cancelled sign-in dialog")
+                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+                        return@withTimeout Result.failure(e)
+                    }
                 }
 
                 // 2. Authenticate with Firebase using retrieved credential
@@ -138,11 +160,11 @@ class AuthManager(
         val raw = e.localizedMessage ?: e.message ?: ""
         return when {
             e is TimeoutCancellationException ->
-                "Sign-in timed out. Please check your internet connection and ensure the Release SHA-1 (5E:17:5B:CD:86:09:70:B7:4E:84:9B:17:FF:F3:24:16:C1:8B:1C:F4) is added in Firebase Console."
+                "Sign-in timed out. Please check your internet connection and try again."
             e is NoCredentialException || raw.contains("NoCredentialException", ignoreCase = true) ->
                 "No Google account found or prompt unavailable. Please ensure a Google account is added in device settings and Google Play Services is updated."
             raw.contains("DEVELOPER_ERROR", ignoreCase = true) || raw.contains(": 10", ignoreCase = true) || raw.contains("code: 10", ignoreCase = true) ->
-                "Google Play Services configuration error (Code 10). Make sure the Release SHA-1 fingerprint (5E:17:5B:CD:86:09:70:B7:4E:84:9B:17:FF:F3:24:16:C1:8B:1C:F4) is added in Firebase Console."
+                "Google Play Services configuration error (Code 10). Please ensure Google Play Services is updated."
             raw.contains("network", ignoreCase = true) || raw.contains("timeout", ignoreCase = true) || raw.contains("connection", ignoreCase = true) ->
                 "Network connection error. Please check your internet connection and try again."
             raw.contains("SamsungPass", ignoreCase = true) ->
