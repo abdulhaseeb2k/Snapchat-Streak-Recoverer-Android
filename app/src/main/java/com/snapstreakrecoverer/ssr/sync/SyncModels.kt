@@ -77,3 +77,48 @@ fun mapToFirestoreFriend(map: Map<String, Any?>): FirestoreFriend {
         isDeleted = map["isDeleted"] as? Boolean ?: false
     )
 }
+
+fun normalizeSnapUsername(username: String): String =
+    username.trim().removePrefix("@").lowercase()
+
+fun normalizeProfileName(name: String): String =
+    name.trim().lowercase()
+
+fun isSameProfile(
+    syncId1: String,
+    snapchatUsername1: String,
+    profileName1: String,
+    syncId2: String,
+    snapchatUsername2: String,
+    profileName2: String
+): Boolean {
+    if (syncId1.isNotBlank() && syncId2.isNotBlank() && syncId1 == syncId2) {
+        return true
+    }
+    val u1 = normalizeSnapUsername(snapchatUsername1)
+    val u2 = normalizeSnapUsername(snapchatUsername2)
+    if (u1.isNotBlank() && u2.isNotBlank() && u1 == u2) {
+        return true
+    }
+    val n1 = normalizeProfileName(profileName1)
+    val n2 = normalizeProfileName(profileName2)
+    if (n1.isNotBlank() && n2.isNotBlank() && n1 == n2) {
+        return true
+    }
+    return false
+}
+
+fun isSameFriend(
+    syncId1: String,
+    username1: String,
+    syncId2: String,
+    username2: String
+): Boolean {
+    if (syncId1.isNotBlank() && syncId2.isNotBlank() && syncId1 == syncId2) {
+        return true
+    }
+    val u1 = normalizeSnapUsername(username1)
+    val u2 = normalizeSnapUsername(username2)
+    return u1.isNotBlank() && u2.isNotBlank() && u1 == u2
+}
+

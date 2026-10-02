@@ -15,6 +15,12 @@ interface RecoveryDao {
     @Query("SELECT * FROM Profile WHERE syncId = :syncId LIMIT 1")
     suspend fun getProfileBySyncId(syncId: String): Profile?
 
+    @Query("SELECT * FROM Profile WHERE LOWER(TRIM(snapchatUsername)) = LOWER(TRIM(:username)) AND isDeleted = 0 LIMIT 1")
+    suspend fun getProfileByUsername(username: String): Profile?
+
+    @Query("SELECT * FROM Profile WHERE LOWER(TRIM(profileName)) = LOWER(TRIM(:name)) AND isDeleted = 0 LIMIT 1")
+    suspend fun getProfileByName(name: String): Profile?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: Profile): Long
 
@@ -36,6 +42,12 @@ interface RecoveryDao {
 
     @Query("SELECT * FROM Friend WHERE syncId = :syncId LIMIT 1")
     suspend fun getFriendBySyncId(syncId: String): Friend?
+
+    @Query("SELECT * FROM Friend WHERE profileId = :profileId AND LOWER(TRIM(username)) = LOWER(TRIM(:username)) AND isDeleted = 0 LIMIT 1")
+    suspend fun getFriendByUsername(profileId: Int, username: String): Friend?
+
+    @Query("UPDATE Friend SET profileId = :newProfileId, profileSyncId = :newProfileSyncId WHERE profileId = :oldProfileId")
+    suspend fun reassignFriendsToProfile(oldProfileId: Int, newProfileId: Int, newProfileSyncId: String)
 
     @Query("SELECT * FROM Friend WHERE profileSyncId = :profileSyncId AND isDeleted = 0")
     fun getFriendsForProfileSync(profileSyncId: String): Flow<List<Friend>>

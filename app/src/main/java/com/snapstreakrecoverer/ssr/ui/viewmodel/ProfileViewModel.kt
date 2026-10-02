@@ -22,11 +22,37 @@ class ProfileViewModel(
     val allProfiles: StateFlow<List<Profile>> = dao.getAllProfiles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    init {
+        viewModelScope.launch {
+            syncManager?.deduplicateLocalProfiles()
+        }
+    }
+
     fun insertProfile(profile: Profile) {
         viewModelScope.launch {
-            val id = dao.insertProfile(profile)
-            val inserted = if (profile.id == 0) profile.copy(id = id.toInt()) else profile
-            syncManager?.pushProfile(inserted)
+            val existing = (if (profile.snapchatUsername.isNotBlank()) {
+                dao.getProfileByUsername(profile.snapchatUsername)
+            } else null) ?: (if (profile.profileName.isNotBlank()) {
+                dao.getProfileByName(profile.profileName)
+            } else null)
+
+            if (existing != null) {
+                val updated = existing.copy(
+                    profileName = profile.profileName,
+                    snapchatUsername = profile.snapchatUsername,
+                    email = profile.email,
+                    mobileNumber = profile.mobileNumber,
+                    device = profile.device,
+                    refreshDelay = profile.refreshDelay,
+                    updatedAt = System.currentTimeMillis()
+                )
+                dao.updateProfile(updated)
+                syncManager?.pushProfile(updated)
+            } else {
+                val id = dao.insertProfile(profile)
+                val inserted = if (profile.id == 0) profile.copy(id = id.toInt()) else profile
+                syncManager?.pushProfile(inserted)
+            }
         }
     }
 
@@ -87,31 +113,59 @@ class ProfileViewModel(
                     val profileData = json.getJSONObject(profileName)
                     val settings = profileData.getJSONObject("settings")
                     
-                    val profile = Profile(
-                        profileName = profileName,
-                        snapchatUsername = settings.optString("username", ""),
-                        email = settings.optString("email", ""),
-                        mobileNumber = settings.optString("mobile_number", ""),
-                        device = settings.optString("device", ""),
-                        refreshDelay = settings.optDouble("refresh_delay", 1.0)
-                    )
-                    
-                    val profileId = dao.insertProfile(profile).toInt()
-                    val savedProfile = profile.copy(id = profileId)
-                    syncManager?.pushProfile(savedProfile)
+                    val username = settings.optString("username", "")
+
+                    val existing = (if (username.isNotBlank()) {
+                        dao.getProfileByUsername(username)
+                    } else null) ?: (if (profileName.isNotBlank()) {
+                        dao.getProfileByName(profileName)
+                    } else null)
+
+                    val savedProfile = if (existing != null) {
+                        val updated = existing.copy(
+                            profileName = profileName,
+                            snapchatUsername = username,
+                            email = settings.optString("email", existing.email),
+                            mobileNumber = settings.optString("mobile_number", existing.mobileNumber),
+                            device = settings.optString("device", existing.device),
+                            refreshDelay = settings.optDouble("refresh_delay", existing.refreshDelay),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        dao.updateProfile(updated)
+                        syncManager?.pushProfile(updated)
+                        updated
+                    } else {
+                        val profile = Profile(
+                            profileName = profileName,
+                            snapchatUsername = username,
+                            email = settings.optString("email", ""),
+                            mobileNumber = settings.optString("mobile_number", ""),
+                            device = settings.optString("device", ""),
+                            refreshDelay = settings.optDouble("refresh_delay", 1.0)
+                        )
+                        val profileId = dao.insertProfile(profile).toInt()
+                        val saved = profile.copy(id = profileId)
+                        syncManager?.pushProfile(saved)
+                        saved
+                    }
+                    val profileId = savedProfile.id
                     
                     val friendsArray = profileData.getJSONArray("friends")
                     for (i in 0 until friendsArray.length()) {
                         val friendObj = friendsArray.getJSONObject(i)
-                        val friend = Friend(
-                            profileId = profileId,
-                            profileSyncId = savedProfile.syncId,
-                            username = friendObj.getString("username"),
-                            displayName = friendObj.optString("name", ""),
-                            isSelected = friendObj.optBoolean("selected", true)
-                        )
-                        dao.insertFriend(friend)
-                        syncManager?.pushFriend(friend)
+                        val fUsername = friendObj.getString("username")
+                        val existingFriend = dao.getFriendByUsername(profileId, fUsername)
+                        if (existingFriend == null) {
+                            val friend = Friend(
+                                profileId = profileId,
+                                profileSyncId = savedProfile.syncId,
+                                username = fUsername,
+                                displayName = friendObj.optString("name", ""),
+                                isSelected = friendObj.optBoolean("selected", true)
+                            )
+                            dao.insertFriend(friend)
+                            syncManager?.pushFriend(friend)
+                        }
                     }
                 }
             } catch (e: Exception) {

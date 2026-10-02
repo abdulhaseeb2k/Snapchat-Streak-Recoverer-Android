@@ -50,15 +50,75 @@ class SyncManager(
         activeUserId = null
     }
 
-    private suspend fun uploadLocalProfiles(userId: String, db: FirebaseFirestore) {
-        val localProfiles = dao.getAllProfilesOnce()
-        for (profile in localProfiles) {
-            val docRef = db.collection("users").document(userId)
-                .collection("profiles").document(profile.syncId)
+    suspend fun deduplicateLocalProfiles(userId: String? = activeUserId, db: FirebaseFirestore? = firestore) {
+        val profiles = dao.getAllProfilesOnce()
+        val seen = mutableListOf<Profile>()
+        for (p in profiles) {
+            val match = seen.find { isSameProfile(it.syncId, it.snapchatUsername, it.profileName, p.syncId, p.snapchatUsername, p.profileName) }
+            if (match != null) {
+                // p is a duplicate of match! Merge friends into match
+                val pFriends = dao.getFriendsForProfileOnce(p.id)
+                val matchFriends = dao.getFriendsForProfileOnce(match.id)
+                for (f in pFriends) {
+                    val existingF = matchFriends.find { isSameFriend(it.syncId, it.username, f.syncId, f.username) }
+                    if (existingF == null) {
+                        dao.insertFriend(f.copy(id = 0, profileId = match.id, profileSyncId = match.syncId))
+                    }
+                    dao.deleteFriend(f)
+                }
+                // Delete duplicate profile locally
+                dao.deleteProfile(p)
+                // If synced, soft-delete duplicate in Firestore so it won't be downloaded again
+                if (userId != null && db != null && p.syncId != match.syncId) {
+                    runCatching {
+                        val softDeleted = p.copy(isDeleted = true, updatedAt = System.currentTimeMillis())
+                        db.collection("users").document(userId)
+                            .collection("profiles").document(p.syncId)
+                            .set(softDeleted.toFirestoreMap())
+                    }
+                }
+            } else {
+                seen.add(p)
+            }
+        }
+    }
 
-            val snapshot = runCatching { docRef.get().await() }.getOrNull()
-            if (snapshot == null || !snapshot.exists()) {
-                docRef.set(profile.toFirestoreMap())
+    private suspend fun uploadLocalProfiles(userId: String, db: FirebaseFirestore) {
+        deduplicateLocalProfiles(userId, db)
+
+        val remoteDocs = runCatching {
+            db.collection("users").document(userId).collection("profiles").get().await()
+        }.getOrNull()?.documents?.mapNotNull { it.data?.let { d -> mapToFirestoreProfile(d) } } ?: emptyList()
+
+        val activeRemoteProfiles = remoteDocs.filter { !it.isDeleted }
+        val localProfiles = dao.getAllProfilesOnce()
+
+        for (profile in localProfiles) {
+            val matchingRemote = activeRemoteProfiles.find { rp ->
+                isSameProfile(
+                    rp.syncId, rp.snapchatUsername, rp.profileName,
+                    profile.syncId, profile.snapchatUsername, profile.profileName
+                )
+            }
+
+            val effectiveSyncId = if (matchingRemote != null) {
+                if (matchingRemote.syncId != profile.syncId) {
+                    val updatedProfile = profile.copy(syncId = matchingRemote.syncId)
+                    dao.updateProfile(updatedProfile)
+                    dao.reassignFriendsToProfile(profile.id, profile.id, matchingRemote.syncId)
+                    matchingRemote.syncId
+                } else {
+                    profile.syncId
+                }
+            } else {
+                profile.syncId
+            }
+
+            val docRef = db.collection("users").document(userId)
+                .collection("profiles").document(effectiveSyncId)
+
+            if (matchingRemote == null || profile.updatedAt > matchingRemote.updatedAt) {
+                docRef.set(profile.copy(syncId = effectiveSyncId).toFirestoreMap())
             }
 
             val friends = dao.getFriendsForProfileOnce(profile.id)
@@ -66,8 +126,8 @@ class SyncManager(
                 val friendRef = docRef.collection("friends").document(friend.syncId)
                 val friendSnapshot = runCatching { friendRef.get().await() }.getOrNull()
                 if (friendSnapshot == null || !friendSnapshot.exists()) {
-                    val updatedFriend = if (friend.profileSyncId.isEmpty()) {
-                        friend.copy(profileSyncId = profile.syncId)
+                    val updatedFriend = if (friend.profileSyncId != effectiveSyncId) {
+                        friend.copy(profileSyncId = effectiveSyncId)
                     } else friend
                     friendRef.set(updatedFriend.toFirestoreMap())
                 }
@@ -83,15 +143,24 @@ class SyncManager(
                 for (doc in snapshot.documents) {
                     val data = doc.data ?: continue
                     val remoteProfile = mapToFirestoreProfile(data)
-                    val existing = dao.getProfileBySyncId(remoteProfile.syncId)
+
+                    val existingBySync = dao.getProfileBySyncId(remoteProfile.syncId)
+                    val existing = existingBySync ?: run {
+                        val byUser = if (remoteProfile.snapchatUsername.isNotBlank()) {
+                            dao.getProfileByUsername(remoteProfile.snapchatUsername)
+                        } else null
+                        byUser ?: if (remoteProfile.profileName.isNotBlank()) {
+                            dao.getProfileByName(remoteProfile.profileName)
+                        } else null
+                    }
 
                     if (remoteProfile.isDeleted) {
-                        if (existing != null) {
+                        if (existing != null && (existing.syncId == remoteProfile.syncId || existingBySync != null)) {
                             dao.deleteProfile(existing)
                         }
-                    } else if (existing == null || remoteProfile.updatedAt > existing.updatedAt) {
+                    } else if (existing == null) {
                         val profileToSave = Profile(
-                            id = existing?.id ?: 0,
+                            id = 0,
                             syncId = remoteProfile.syncId,
                             profileName = remoteProfile.profileName,
                             snapchatUsername = remoteProfile.snapchatUsername,
@@ -103,9 +172,25 @@ class SyncManager(
                             isDeleted = false
                         )
                         val insertedId = dao.insertProfile(profileToSave).toInt()
-                        val effectiveId = if (existing != null) existing.id else insertedId
-                        attachFriendsListener(userId, remoteProfile.syncId, effectiveId, db)
+                        attachFriendsListener(userId, remoteProfile.syncId, insertedId, db)
                     } else {
+                        val profileToSave = if (remoteProfile.updatedAt > existing.updatedAt) {
+                            existing.copy(
+                                syncId = remoteProfile.syncId,
+                                profileName = remoteProfile.profileName,
+                                snapchatUsername = remoteProfile.snapchatUsername,
+                                email = remoteProfile.email,
+                                mobileNumber = remoteProfile.mobileNumber,
+                                device = remoteProfile.device,
+                                refreshDelay = remoteProfile.refreshDelay,
+                                updatedAt = remoteProfile.updatedAt,
+                                isDeleted = false
+                            )
+                        } else {
+                            existing.copy(syncId = remoteProfile.syncId)
+                        }
+                        dao.updateProfile(profileToSave)
+                        dao.reassignFriendsToProfile(existing.id, existing.id, remoteProfile.syncId)
                         attachFriendsListener(userId, remoteProfile.syncId, existing.id, db)
                     }
                 }
@@ -130,15 +215,16 @@ class SyncManager(
                 for (doc in snapshot.documents) {
                     val data = doc.data ?: continue
                     val remoteFriend = mapToFirestoreFriend(data)
-                    val existing = dao.getFriendBySyncId(remoteFriend.syncId)
+                    val existingBySync = dao.getFriendBySyncId(remoteFriend.syncId)
+                    val existing = existingBySync ?: dao.getFriendByUsername(localProfileId, remoteFriend.username)
 
                     if (remoteFriend.isDeleted) {
                         if (existing != null) {
                             dao.deleteFriend(existing)
                         }
-                    } else if (existing == null || remoteFriend.updatedAt > existing.updatedAt) {
+                    } else if (existing == null) {
                         val friendToSave = Friend(
-                            id = existing?.id ?: 0,
+                            id = 0,
                             syncId = remoteFriend.syncId,
                             profileId = localProfileId,
                             profileSyncId = profileSyncId,
@@ -149,6 +235,21 @@ class SyncManager(
                             isDeleted = false
                         )
                         dao.insertFriend(friendToSave)
+                    } else {
+                        val friendToSave = if (remoteFriend.updatedAt > existing.updatedAt) {
+                            existing.copy(
+                                syncId = remoteFriend.syncId,
+                                profileSyncId = profileSyncId,
+                                username = remoteFriend.username,
+                                displayName = remoteFriend.displayName,
+                                isSelected = remoteFriend.isSelected,
+                                updatedAt = remoteFriend.updatedAt,
+                                isDeleted = false
+                            )
+                        } else {
+                            existing.copy(syncId = remoteFriend.syncId, profileSyncId = profileSyncId)
+                        }
+                        dao.updateFriend(friendToSave)
                     }
                 }
             }
