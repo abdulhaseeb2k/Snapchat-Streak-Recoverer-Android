@@ -3,6 +3,7 @@ package com.snapstreakrecoverer.ssr.auth
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.util.Log
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -14,10 +15,13 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
 
 sealed interface AuthState {
     object Unauthenticated : AuthState
@@ -42,52 +46,77 @@ class AuthManager(
     }
 
     suspend fun signInWithGoogle(context: Context): Result<FirebaseUser> {
-        val auth = firebaseAuth ?: return Result.failure(IllegalStateException("Firebase Auth is not available"))
+        val auth = firebaseAuth
+        if (auth == null) {
+            val err = "Firebase Auth is not available. Please check Google Play Services."
+            _authState.value = AuthState.Error(err)
+            return Result.failure(IllegalStateException(err))
+        }
+
+        val activity = context.findActivity()
+        if (activity == null) {
+            val err = "Cannot initiate Google sign-in without a foreground Activity."
+            _authState.value = AuthState.Error(err)
+            return Result.failure(IllegalStateException(err))
+        }
+
         _authState.value = AuthState.Loading
 
-        val activity = context.findActivity() ?: context
-        val credentialManager = CredentialManager.create(activity)
-        val clientId = if (webClientId.isNotEmpty()) webClientId else "dummy-client-id"
+        return try {
+            withTimeout(25_000L) {
+                val credentialManager = CredentialManager.create(activity)
+                val clientId = if (webClientId.isNotEmpty()) webClientId else "dummy-client-id"
 
-        // Attempt 1: GetSignInWithGoogleOption (Official explicit button flow, works reliably on Android 14+ / OneUI)
-        try {
-            val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
-                .build()
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(signInOption)
-                .build()
+                // 1. Fetch credential (Attempt 1: GetSignInWithGoogleOption, Fallback: GetGoogleIdOption)
+                val credential = try {
+                    val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId)
+                        .build()
+                    val request = GetCredentialRequest.Builder()
+                        .addCredentialOption(signInOption)
+                        .build()
 
-            val response = credentialManager.getCredential(context = activity, request = request)
-            val user = authenticateWithCredential(auth, response.credential)
-            _authState.value = AuthState.Authenticated(user)
-            return Result.success(user)
-        } catch (e: GetCredentialCancellationException) {
-            _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-            return Result.failure(e)
-        } catch (firstAttemptException: Exception) {
-            // Attempt 2: Fallback to GetGoogleIdOption (Standard compatibility flow)
-            try {
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId(clientId)
-                    .setAutoSelectEnabled(false)
-                    .build()
-                val fallbackRequest = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
+                    val response = credentialManager.getCredential(context = activity, request = request)
+                    response.credential
+                } catch (e: GetCredentialCancellationException) {
+                    Log.i("AuthManager", "User cancelled Google sign-in")
+                    _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+                    return@withTimeout Result.failure(e)
+                } catch (firstAttemptException: Throwable) {
+                    Log.w("AuthManager", "GetSignInWithGoogleOption failed, falling back to GetGoogleIdOption: ${firstAttemptException.message}")
+                    try {
+                        val googleIdOption = GetGoogleIdOption.Builder()
+                            .setFilterByAuthorizedAccounts(false)
+                            .setServerClientId(clientId)
+                            .setAutoSelectEnabled(false)
+                            .build()
+                        val fallbackRequest = GetCredentialRequest.Builder()
+                            .addCredentialOption(googleIdOption)
+                            .build()
 
-                val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
-                val user = authenticateWithCredential(auth, fallbackResponse.credential)
+                        val fallbackResponse = credentialManager.getCredential(context = activity, request = fallbackRequest)
+                        fallbackResponse.credential
+                    } catch (e: GetCredentialCancellationException) {
+                        Log.i("AuthManager", "User cancelled Google sign-in on fallback")
+                        _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
+                        return@withTimeout Result.failure(e)
+                    }
+                }
+
+                // 2. Authenticate with Firebase using retrieved credential
+                val user = authenticateWithCredential(auth, credential)
                 _authState.value = AuthState.Authenticated(user)
-                return Result.success(user)
-            } catch (e: GetCredentialCancellationException) {
+                Result.success(user)
+            }
+        } catch (t: Throwable) {
+            if (t is CancellationException && t !is TimeoutCancellationException) {
+                // Normal coroutine cancellation
                 _authState.value = auth.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
-                return Result.failure(e)
-            } catch (secondAttemptException: Exception) {
-                val exToMap = if (secondAttemptException is NoCredentialException) firstAttemptException else secondAttemptException
-                val friendlyMessage = mapUserFriendlyError(exToMap)
+                Result.failure(t)
+            } else {
+                Log.e("AuthManager", "Sign-in error: ${t.javaClass.simpleName} - ${t.message}", t)
+                val friendlyMessage = mapUserFriendlyError(t)
                 _authState.value = AuthState.Error(friendlyMessage)
-                return Result.failure(secondAttemptException)
+                Result.failure(t)
             }
         }
     }
@@ -97,7 +126,11 @@ class AuthManager(
             credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
         ) {
             val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-            val authCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
+            val idToken = googleIdTokenCredential.idToken
+            if (idToken.isNullOrBlank()) {
+                throw IllegalStateException("Google ID token was empty. Ensure Release SHA-1 fingerprint is registered in Firebase Console.")
+            }
+            val authCredential = GoogleAuthProvider.getCredential(idToken, null)
             val authResult = auth.signInWithCredential(authCredential).await()
             return authResult.user ?: throw IllegalStateException("Firebase user is null after sign in")
         } else {
@@ -108,16 +141,24 @@ class AuthManager(
     private fun mapUserFriendlyError(e: Throwable): String {
         val raw = e.localizedMessage ?: e.message ?: ""
         return when {
+            e is TimeoutCancellationException ->
+                "Sign-in timed out. Please check your internet connection and ensure the Release SHA-1 (5E:17:5B:CD:86:09:70:B7:4E:84:9B:17:FF:F3:24:16:C1:8B:1C:F4) is added in Firebase Console."
             e is NoCredentialException || raw.contains("NoCredentialException", ignoreCase = true) ->
-                "No Google account found on this device, or sign-in prompt was unavailable. Please ensure a Google account is added in device settings and Google Play Services is updated."
+                "No Google account found or prompt unavailable. Please ensure a Google account is added in device settings and Google Play Services is updated."
             raw.contains("DEVELOPER_ERROR", ignoreCase = true) || raw.contains(": 10", ignoreCase = true) || raw.contains("code: 10", ignoreCase = true) ->
-                "Google Play Services configuration error (Code 10). Make sure the SHA-1 fingerprint for this device is added in Firebase Console."
+                "Google Play Services configuration error (Code 10). Make sure the Release SHA-1 fingerprint (5E:17:5B:CD:86:09:70:B7:4E:84:9B:17:FF:F3:24:16:C1:8B:1C:F4) is added in Firebase Console."
             raw.contains("network", ignoreCase = true) || raw.contains("timeout", ignoreCase = true) || raw.contains("connection", ignoreCase = true) ->
                 "Network connection error. Please check your internet connection and try again."
             raw.contains("SamsungPass", ignoreCase = true) ->
                 "Samsung Pass credential conflict. Please allow Google Play Services to handle sign-in."
             raw.isNotBlank() -> raw
             else -> "Unable to sign in with Google. Please try again."
+        }
+    }
+
+    fun cancelSignIn() {
+        if (_authState.value is AuthState.Loading) {
+            _authState.value = firebaseAuth?.currentUser?.let { AuthState.Authenticated(it) } ?: AuthState.Unauthenticated
         }
     }
 

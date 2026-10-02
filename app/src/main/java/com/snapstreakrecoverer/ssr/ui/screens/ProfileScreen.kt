@@ -148,7 +148,8 @@ fun ProfileScreen(
                 onSignInClick = { authViewModel?.signIn(context) },
                 onRetryClick = { authViewModel?.signIn(context) },
                 onDismissError = { authViewModel?.clearError() },
-                onManageClick = onSettingsClick
+                onManageClick = onSettingsClick,
+                onCancelLoading = { authViewModel?.cancelSignIn() }
             )
 
             val updateState by settingsViewModel?.updateState?.collectAsState() ?: remember { mutableStateOf(UpdateCheckState.Idle) }
@@ -431,7 +432,8 @@ fun CloudSyncSection(
     onSignInClick: () -> Unit,
     onRetryClick: () -> Unit,
     onDismissError: () -> Unit,
-    onManageClick: () -> Unit
+    onManageClick: () -> Unit,
+    onCancelLoading: () -> Unit = {}
 ) {
     AnimatedVisibility(
         visible = true,
@@ -512,14 +514,14 @@ fun CloudSyncSection(
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(24.dp),
                             color = Primary,
-                            strokeWidth = 3.dp
+                            strokeWidth = 2.5.dp
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -528,10 +530,16 @@ fun CloudSyncSection(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Please select your Google account in the popup dialog.",
+                                text = "Select your Google account in the popup dialog.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        TextButton(
+                            onClick = onCancelLoading,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("Cancel", fontSize = 12.sp, color = Primary, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

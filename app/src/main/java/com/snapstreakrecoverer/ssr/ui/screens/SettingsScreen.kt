@@ -162,16 +162,16 @@ fun SettingsScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Row(
-                            modifier = Modifier.padding(20.dp),
+                            modifier = Modifier.padding(18.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(28.dp),
+                                modifier = Modifier.size(26.dp),
                                 color = Color(0xFFFFFC00),
-                                strokeWidth = 3.dp
+                                strokeWidth = 2.5.dp
                             )
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Connecting to Google...",
                                     style = MaterialTheme.typography.titleSmall,
@@ -182,6 +182,11 @@ fun SettingsScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                            TextButton(
+                                onClick = { authViewModel?.cancelSignIn() }
+                            ) {
+                                Text("Cancel", color = Color(0xFFFFFC00), fontWeight = FontWeight.Bold)
                             }
                         }
                     }

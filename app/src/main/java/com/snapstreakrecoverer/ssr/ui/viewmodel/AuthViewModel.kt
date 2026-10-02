@@ -24,4 +24,8 @@ class AuthViewModel(private val authManager: AuthManager) : ViewModel() {
     fun clearError() {
         authManager.clearError()
     }
+
+    fun cancelSignIn() {
+        authManager.cancelSignIn()
+    }
 }
